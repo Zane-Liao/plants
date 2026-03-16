@@ -25,6 +25,20 @@ struct PlantIdentificationView: View {
                     .padding(.bottom, 32)
             }
         }
+        .onDisappear { presenter.cameraService.stop() }
+        .onChange(of: presenter.isModelReady) { _, ready in
+            if ready {
+                presenter.cameraService.start()
+            } else {
+                presenter.cameraService.stop()
+            }
+        }
+        .task {
+            // Defer heavy work until after first render.
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            presenter.loadModelIfNeeded()
+        }
         .overlay(alignment: .topTrailing) {
             #if DEBUG || targetEnvironment(simulator)
             Button {
@@ -64,6 +78,11 @@ struct PlantIdentificationView: View {
     
     private var glassCard: some View {
         VStack(spacing: 16) {
+            if let error = presenter.modelLoadErrorMessage {
+                Text(error)
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.9))
+            }
             if let topResult = presenter.topResult {
                 HStack {
                     VStack(alignment: .leading) {

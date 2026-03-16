@@ -11,8 +11,10 @@ class PlantPresenter: ObservableObject, CameraServiceDelegate {
     @Published var modelLoadErrorMessage: String?
     @Published var debugImage: UIImage?
     @Published var debugResults: [IdentificationResult] = []
+    @Published private(set) var isModelReady: Bool = false
     
-    private let classifier: PlantClassifier?
+    private var classifier: PlantClassifier?
+    private var isModelLoading = false
     let cameraService = CameraService()
     
     // Throttling for classification
@@ -20,13 +22,30 @@ class PlantPresenter: ObservableObject, CameraServiceDelegate {
     private let identificationInterval: TimeInterval = 0.5 // Run inference every 0.5s
     
     init() {
-        do {
-            self.classifier = try PlantClassifier()
-        } catch {
-            self.modelLoadErrorMessage = "Failed to load ML model: \(error.localizedDescription)"
-            self.classifier = nil
-        }
         self.cameraService.delegate = self
+    }
+
+    func loadModelIfNeeded() {
+        guard !isModelReady, !isModelLoading else { return }
+        isModelLoading = true
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let model = try PlantClassifier()
+                DispatchQueue.main.async {
+                    self.classifier = model
+                    self.isModelReady = true
+                    self.isModelLoading = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.modelLoadErrorMessage = "Failed to load ML model: \(error.localizedDescription)"
+                    self.classifier = nil
+                    self.isModelReady = false
+                    self.isModelLoading = false
+                }
+            }
+        }
     }
     
     func cameraService(_ service: CameraService, didOutput sampleBuffer: CMSampleBuffer) {

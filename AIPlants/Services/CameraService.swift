@@ -9,53 +9,87 @@ protocol CameraServiceDelegate: AnyObject {
 
 class CameraService: NSObject, ObservableObject {
     @Published var session = AVCaptureSession()
+    @Published private(set) var authorizationStatus: AVAuthorizationStatus = .notDetermined
+    @Published private(set) var isRunning: Bool = false
     weak var delegate: CameraServiceDelegate?
     
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "camera.session.queue")
+    private var isConfigured = false
     
     override init() {
         super.init()
-        checkPermissions()
-        setupSession()
+        authorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        requestPermissionIfNeeded()
     }
     
-    private func checkPermissions() {
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
+    func start() {
+        sessionQueue.async {
+            guard self.authorizationStatus == .authorized else { return }
+            if !self.isConfigured {
+                self.configureSession()
+            }
+            guard !self.session.isRunning else { return }
+            self.session.startRunning()
+            DispatchQueue.main.async { self.isRunning = true }
+        }
+    }
+    
+    func stop() {
+        sessionQueue.async {
+            guard self.session.isRunning else { return }
+            self.session.stopRunning()
+            DispatchQueue.main.async { self.isRunning = false }
+        }
+    }
+    
+    private func requestPermissionIfNeeded() {
+        switch authorizationStatus {
         case .authorized:
             break
         case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                if granted {
-                    self.setupSession()
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                guard let self else { return }
+                DispatchQueue.main.async {
+                    self.authorizationStatus = granted ? .authorized : .denied
                 }
             }
         default:
-            print("Camera access denied")
+            break
         }
     }
     
-    private func setupSession() {
-        sessionQueue.async {
-            self.session.beginConfiguration()
-            
-            guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-                  let videoInput = try? AVCaptureDeviceInput(device: videoDevice) else {
-                return
-            }
-            
-            if self.session.canAddInput(videoInput) {
-                self.session.addInput(videoInput)
-            }
-            
-            self.videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "video.output.queue"))
-            if self.session.canAddOutput(self.videoOutput) {
-                self.session.addOutput(self.videoOutput)
-            }
-            
-            self.session.commitConfiguration()
-            self.session.startRunning()
+    private func configureSession() {
+        guard !isConfigured else { return }
+        isConfigured = true
+        
+        session.beginConfiguration()
+        session.sessionPreset = .high
+        
+        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+              let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
+              session.canAddInput(videoInput) else {
+            session.commitConfiguration()
+            return
         }
+        session.addInput(videoInput)
+        
+        videoOutput.alwaysDiscardsLateVideoFrames = true
+        videoOutput.videoSettings = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ]
+        videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "video.output.queue", qos: .userInitiated))
+        guard session.canAddOutput(videoOutput) else {
+            session.commitConfiguration()
+            return
+        }
+        session.addOutput(videoOutput)
+        
+        if let connection = videoOutput.connection(with: .video), connection.isVideoOrientationSupported {
+            connection.videoOrientation = .portrait
+        }
+        
+        session.commitConfiguration()
     }
 }
 
