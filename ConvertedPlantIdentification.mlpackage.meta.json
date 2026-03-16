@@ -1,0 +1,23 @@
+{
+  "model_id": "juppy44/plant-identification-2m-vit-b",
+  "image_size": 224,
+  "mean": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "std": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "scale": 0.00392156862745098,
+  "bias": [
+    -0.5,
+    -0.5,
+    -0.5
+  ],
+  "class_labels_count": 14829,
+  "convert_to": "mlprogram",
+  "minimum_deployment_target": "iOS16"
+}

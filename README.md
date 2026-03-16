@@ -1,0 +1,2 @@
+- A software for identifying and providing information about plants, using deep learning for classification and API search (Bing/Google)
+- Vibe Coding~2hours
